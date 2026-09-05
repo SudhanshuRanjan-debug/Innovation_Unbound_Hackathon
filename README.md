@@ -139,4 +139,4 @@ This is a hackathon prototype. See `docs/specs/implementation-plan.md` for devel
 
 ## Contact
 
-sudhanshu.vitcc24@gmail.com
+[Add contact information]

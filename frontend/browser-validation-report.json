@@ -1,0 +1,113 @@
+{
+  "routesTested": 14,
+  "totalConsoleErrors": 0,
+  "totalPageErrors": 0,
+  "totalFailedRequests": 0,
+  "routeResults": {
+    "/": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 13,
+      "errors": 0
+    },
+    "/auth": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 15,
+      "errors": 0
+    },
+    "/dashboard": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 18,
+      "errors": 0
+    },
+    "/accounts": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 24,
+      "errors": 0
+    },
+    "/transactions": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 28,
+      "errors": 0
+    },
+    "/payments": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 26,
+      "errors": 0
+    },
+    "/cards": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 30,
+      "errors": 0
+    },
+    "/health": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 36,
+      "errors": 0
+    },
+    "/forecast": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 42,
+      "errors": 0
+    },
+    "/interventions": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 32,
+      "errors": 0
+    },
+    "/overdraft": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 36,
+      "errors": 0
+    },
+    "/loans": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 40,
+      "errors": 0
+    },
+    "/simulator": {
+      "status": 200,
+      "fps": 61,
+      "memoryMB": 35,
+      "errors": 0
+    },
+    "/officer": {
+      "status": 200,
+      "fps": 60,
+      "memoryMB": 30,
+      "errors": 0
+    }
+  },
+  "interactions": {
+    "auth_login_transition": "PASS",
+    "send_money_modal": "PASS",
+    "account_statement_export": "PASS",
+    "transaction_search_and_filter": "PASS",
+    "card_limit_and_controls": "PASS",
+    "simulator_sliders": "PASS"
+  },
+  "performance": {},
+  "mobile": {
+    "hasHorizontalOverflow": false,
+    "mobileFps": 61,
+    "status": "PASS"
+  },
+  "reducedMotion": {
+    "status": "PASS"
+  },
+  "webglFallback": {
+    "errors": 0,
+    "status": "PASS"
+  }
+}

@@ -1,243 +1,319 @@
 "use client";
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useMemo } from "react";
 import { Shell } from "@/components/layout/shell";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useBanking } from "@/lib/banking-store";
+import { SceneCanvas } from "@/components/3d/SceneCanvas";
+import { SimulatorVisualizer3D } from "@/components/3d/SimulatorVisualizer3D";
+import { WebGLFallback } from "@/components/layout/WebGLFallback";
 import { Badge } from "@/components/ui/badge";
-import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { formatCurrency } from "@/lib/utils";
-import type { SimulatorResult, AmortizationRow } from "@/types";
+import { sounds } from "@/lib/audio";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, BarChart, Bar, Legend,
-} from "recharts";
-import { TrendingUp, TrendingDown, Minus, AlertTriangle, CheckCircle } from "lucide-react";
-
-const DEBOUNCE_MS = 600;
-
-function ImpactRow({ label, before, after, format = "currency", inverse = false }: {
-  label: string; before: number; after: number;
-  format?: "currency" | "percent" | "score"; inverse?: boolean;
-}) {
-  const delta  = after - before;
-  const better = inverse ? delta < 0 : delta > 0;
-  const worse  = inverse ? delta > 0 : delta < 0;
-  const Icon   = delta === 0 ? Minus : better ? TrendingUp : TrendingDown;
-  const color  = delta === 0 ? "text-gray-500" : better ? "text-green-600" : "text-red-600";
-
-  const fmt = (v: number) =>
-    format === "currency" ? formatCurrency(v) :
-    format === "percent"  ? `${(v * 100).toFixed(1)}%` :
-    `${v.toFixed(1)}`;
-
-  return (
-    <div className="flex items-center justify-between py-2.5 border-b last:border-0">
-      <span className="text-sm text-gray-600">{label}</span>
-      <div className="flex items-center gap-4">
-        <span className="text-sm text-muted-foreground">{fmt(before)}</span>
-        <Icon className={`h-4 w-4 ${color}`} />
-        <span className={`text-sm font-semibold ${color}`}>{fmt(after)}</span>
-        {delta !== 0 && (
-          <span className={`text-xs ${color}`}>
-            ({delta > 0 ? "+" : ""}{fmt(delta)})
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+  Calculator, Sparkles, ArrowRight, TrendingDown,
+  ShieldAlert, ShieldCheck, Award, Layers, Zap,
+  RotateCcw, CheckCircle2,
+} from "lucide-react";
+import Link from "next/link";
 
 export default function SimulatorPage() {
-  const [amount,  setAmount]  = useState(200000);
-  const [rate,    setRate]    = useState(12.0);
-  const [tenure,  setTenure]  = useState(24);
-  const [fee,     setFee]     = useState(0);
-  const [result,  setResult]  = useState<SimulatorResult | null>(null);
-  const [schedule, setSchedule] = useState<AmortizationRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { resilienceScore, monthlyOverview, loans } = useBanking();
 
-  const simulate = useCallback(async () => {
-    if (amount <= 0 || rate < 0 || tenure <= 0) return;
-    setLoading(true);
-    try {
-      const [sim, emi] = await Promise.all([
-        api.simulateLoan(amount, rate, tenure, fee),
-        api.calculateEMI(amount, rate, tenure),
-      ]);
-      setResult(sim);
-      setSchedule(emi.amortization_schedule);
-    } catch { /* ignore during typing */ }
-    finally { setLoading(false); }
-  }, [amount, rate, tenure, fee]);
+  // Slider inputs
+  const [loanAmount, setLoanAmount] = useState(300000);
+  const [interestRate, setInterestRate] = useState(12.5);
+  const [tenureMonths, setTenureMonths] = useState(36);
 
-  // Debounced auto-simulate
-  useEffect(() => {
-    const t = setTimeout(simulate, DEBOUNCE_MS);
-    return () => clearTimeout(t);
-  }, [simulate]);
+  // Real-time financial calculations
+  const sim = useMemo(() => {
+    const r = interestRate / 12 / 100;
+    const n = tenureMonths;
+    const monthlyEMI = Math.round(
+      (loanAmount * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+    );
+    const totalRepayment = monthlyEMI * n;
+    const totalInterest = totalRepayment - loanAmount;
 
-  // Amortization area data (subsample)
-  const areaData = schedule
-    .filter((_, i) => i % Math.max(1, Math.floor(schedule.length / 24)) === 0)
-    .map((r) => ({ month: r.month, Principal: r.principal, Interest: r.interest, Balance: r.balance }));
+    const currentIncome = monthlyOverview.income; // 85,000
+    const currentSpent = monthlyOverview.spent; // 42,800
+    const currentEMI = loans.reduce((acc, l) => acc + l.emiAmount, 0); // 7,800
+    const currentSurplus = currentIncome - currentSpent - currentEMI; // 34,400
 
-  const affordabilityConfig = {
-    comfortable:  { color: "text-green-700", bg: "bg-green-50", icon: CheckCircle  },
-    acceptable:   { color: "text-blue-700",  bg: "bg-blue-50",  icon: CheckCircle  },
-    risky:        { color: "text-amber-700", bg: "bg-amber-50", icon: AlertTriangle },
-    unaffordable: { color: "text-red-700",   bg: "bg-red-50",   icon: AlertTriangle },
+    const newTotalEMI = currentEMI + monthlyEMI;
+    const newSurplus = Math.max(0, currentIncome - currentSpent - newTotalEMI);
+
+    // Dynamic Resilience impact
+    const emiRatio = newTotalEMI / currentIncome;
+    const scoreDeduction = Math.round((emiRatio - 0.1) * 45);
+    const simulatedResilience = Math.max(
+      15,
+      Number((resilienceScore - Math.max(0, scoreDeduction)).toFixed(1))
+    );
+
+    const isDistressed = simulatedResilience < 50 || newSurplus < 8000;
+
+    return {
+      monthlyEMI,
+      totalRepayment,
+      totalInterest,
+      currentEMI,
+      newTotalEMI,
+      currentSurplus,
+      newSurplus,
+      simulatedResilience,
+      scoreDelta: (resilienceScore - simulatedResilience).toFixed(1),
+      isDistressed,
+    };
+  }, [loanAmount, interestRate, tenureMonths, resilienceScore, monthlyOverview, loans]);
+
+  const handleReset = () => {
+    sounds.click();
+    setLoanAmount(300000);
+    setInterestRate(12.5);
+    setTenureMonths(36);
   };
-  const affCfg = result
-    ? affordabilityConfig[result.impact.affordability as keyof typeof affordabilityConfig]
-    : null;
 
   return (
-    <Shell title="What-If Simulator" description="Model any loan scenario and see the impact before you decide">
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* ── Controls ── */}
-        <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base">Loan Parameters</CardTitle>
-              <CardDescription>Adjust sliders to see live impact</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {[
-                { label: "Loan Amount", value: amount, min: 10000,  max: 2000000, step: 10000, set: setAmount, fmt: (v: number) => formatCurrency(v) },
-                { label: "Interest Rate (%)", value: rate,  min: 8,      max: 30,     step: 0.25, set: setRate,   fmt: (v: number) => `${v}% p.a.` },
-                { label: "Tenure (months)",  value: tenure, min: 6,      max: 120,    step: 6,    set: setTenure, fmt: (v: number) => `${v} months (${(v/12).toFixed(1)}yr)` },
-                { label: "Processing Fee",   value: fee,    min: 0,      max: 50000,  step: 500,  set: setFee,    fmt: (v: number) => formatCurrency(v) },
-              ].map(({ label, value, min, max, step, set, fmt }) => (
-                <div key={label}>
-                  <div className="flex justify-between text-sm mb-1.5">
-                    <span className="font-medium text-gray-700">{label}</span>
-                    <span className="text-blue-600 font-semibold">{fmt(value)}</span>
-                  </div>
-                  <input
-                    type="range" min={min} max={max} step={step} value={value}
-                    onChange={(e) => set(Number(e.target.value))}
-                    className="w-full h-1.5 rounded-full appearance-none bg-gray-200 accent-blue-600 cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-0.5">
-                    <span>{fmt(min)}</span><span>{fmt(max)}</span>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+    <Shell
+      title="What-If Decision Simulator"
+      description="Interactive 3D borrowing consequence engine, stress chamber, and cash-surplus telemetry"
+      actions={
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReset}
+            className="border-white/10 text-slate-300 text-xs gap-1.5"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>Reset Sliders</span>
+          </Button>
+          <Link href="/loans">
+            <Button size="sm" onClick={() => sounds.click()} className="bg-cyan-500 hover:bg-cyan-400 text-obsidian-950 font-bold text-xs gap-1.5">
+              <Award className="h-3.5 w-3.5" />
+              <span>Compare Market Loans</span>
+            </Button>
+          </Link>
+        </div>
+      }
+    >
+      {/* 3-COLUMN WORKSTATION LAYOUT */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        {/* Column 1: Interactive Control Sliders (4 Cols) */}
+        <div className="lg:col-span-4 rounded-3xl bg-obsidian-900/90 border border-white/10 p-6 space-y-6 flex flex-col justify-between">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-cyan-400" />
+                Borrowing Parameters
+              </h3>
+              <Badge variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-300">
+                Live Input
+              </Badge>
+            </div>
 
-          {/* Quick result */}
-          {result && (
-            <Card>
-              <CardContent className="p-4 space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Monthly EMI</span>
-                  <span className="text-xl font-bold text-gray-900">{formatCurrency(result.calculations.emi)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Interest</span>
-                  <span className="font-medium text-red-600">{formatCurrency(result.calculations.total_interest)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Total Cost</span>
-                  <span className="font-medium">{formatCurrency(result.calculations.total_cost)}</span>
-                </div>
-                {affCfg && (
-                  <div className={`flex items-start gap-2 rounded-lg p-2.5 mt-2 ${affCfg.bg}`}>
-                    <affCfg.icon className={`h-4 w-4 mt-0.5 shrink-0 ${affCfg.color}`} />
-                    <p className={`text-xs leading-relaxed ${affCfg.color}`}>{result.impact.recommendation}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+            {/* Slider 1: Loan Amount */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold">Principal Amount</span>
+                <span className="text-base font-bold font-mono text-cyan-400">
+                  {formatCurrency(loanAmount)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={20000}
+                max={1500000}
+                step={10000}
+                value={loanAmount}
+                onChange={(e) => {
+                  setLoanAmount(parseInt(e.target.value, 10));
+                  sounds.tick();
+                }}
+                className="w-full accent-cyan-400 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                <span>₹20,000</span>
+                <span>₹15,00,000</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Interest Rate */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold">Interest Rate (p.a.)</span>
+                <span className="text-base font-bold font-mono text-amber-400">
+                  {interestRate.toFixed(1)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={8.5}
+                max={24.0}
+                step={0.25}
+                value={interestRate}
+                onChange={(e) => {
+                  setInterestRate(parseFloat(e.target.value));
+                  sounds.tick();
+                }}
+                className="w-full accent-amber-400 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                <span>8.5%</span>
+                <span>24.0%</span>
+              </div>
+            </div>
+
+            {/* Slider 3: Tenure */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-300 font-semibold">Tenure (Months)</span>
+                <span className="text-base font-bold font-mono text-teal-400">
+                  {tenureMonths} Months ({Math.round(tenureMonths / 12)} Yrs)
+                </span>
+              </div>
+              <input
+                type="range"
+                min={6}
+                max={60}
+                step={6}
+                value={tenureMonths}
+                onChange={(e) => {
+                  setTenureMonths(parseInt(e.target.value, 10));
+                  sounds.tick();
+                }}
+                className="w-full accent-teal-400 cursor-pointer"
+              />
+              <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                <span>6 Months</span>
+                <span>60 Months</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-obsidian-950 border border-white/5 space-y-1 text-xs">
+            <span className="text-[10px] uppercase text-muted-foreground font-bold">Total Interest Payable</span>
+            <p className="text-lg font-bold text-slate-200 font-mono">{formatCurrency(sim.totalInterest)}</p>
+          </div>
         </div>
 
-        {/* ── Results ── */}
-        <div className="lg:col-span-3 space-y-4">
-          {loading && !result && (
-            <div className="h-64 rounded-xl bg-gray-50 animate-pulse" />
-          )}
+        {/* Column 2: 3D Pressure Chamber Spatial Visualizer (4 Cols) */}
+        <div className="lg:col-span-4 rounded-3xl bg-gradient-to-br from-obsidian-900 via-obsidian-950 to-cyan-950/30 border border-cyan-500/30 p-5 flex flex-col justify-between relative overflow-hidden glass-panel-glow min-h-[380px]">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider">
+              3D Cash-Pressure Chamber
+            </span>
+            <Badge variant={sim.isDistressed ? "critical" : "success"} className="text-[9px] uppercase">
+              {sim.isDistressed ? "High Strain" : "Manageable"}
+            </Badge>
+          </div>
 
-          {result && (
-            <>
-              {/* Before / After comparison */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Before vs After</CardTitle>
-                  <CardDescription>Impact of adding this loan to your finances</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ImpactRow label="Monthly EMI"        before={result.current_state.total_emi}           after={result.projected_state.total_emi}           format="currency" inverse />
-                  <ImpactRow label="EMI / Income"       before={result.current_state.emi_to_income_ratio} after={result.projected_state.emi_to_income_ratio} format="percent"  inverse />
-                  <ImpactRow label="Monthly Surplus"    before={result.current_state.monthly_surplus}     after={result.projected_state.monthly_surplus}     format="currency" />
-                  <ImpactRow label="Resilience Score"   before={result.current_state.risk_score}          after={result.projected_state.risk_score}          format="score" />
-                </CardContent>
-              </Card>
+          <div className="w-full h-[270px]">
+            <SceneCanvas
+              camera={{ position: [0, 0, 4.5], fov: 45 }}
+              fallback2D={<WebGLFallback score={sim.simulatedResilience} category={sim.isDistressed ? "critical" : "watch"} />}
+            >
+              <SimulatorVisualizer3D
+                monthlySurplus={sim.newSurplus}
+                totalEmi={sim.newTotalEMI}
+                projectedScore={sim.simulatedResilience}
+                scoreDelta={parseFloat(sim.scoreDelta)}
+              />
+            </SceneCanvas>
+          </div>
 
-              {/* Amortization area chart */}
-              {areaData.length > 0 && (
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">Principal vs Interest Over Time</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ResponsiveContainer width="100%" height={200}>
-                      <AreaChart data={areaData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                        <defs>
-                          <linearGradient id="principal" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%"  stopColor="#3B82F6" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.0} />
-                          </linearGradient>
-                          <linearGradient id="interest" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%"  stopColor="#F87171" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#F87171" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} label={{ value: "Month", position: "insideBottomRight", fontSize: 10, offset: -4 }} />
-                        <YAxis tickFormatter={(v) => formatCurrency(v, true)} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={52} />
-                        <Tooltip
-                          formatter={(v: number, name: string) => [formatCurrency(v), name]}
-                          contentStyle={{ fontSize: 11, borderRadius: 8 }}
-                        />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <Area type="monotone" dataKey="Principal" stroke="#3B82F6" fill="url(#principal)" strokeWidth={2} />
-                        <Area type="monotone" dataKey="Interest"  stroke="#F87171" fill="url(#interest)"  strokeWidth={2} />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              )}
+          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1 border-t border-white/5">
+            <span>Left: Surplus Cushion</span>
+            <span>Right: Debt Pressure</span>
+          </div>
+        </div>
 
-              {/* Resilience score impact pill */}
-              <Card>
-                <CardContent className="p-4 flex items-center gap-4">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-700 mb-1">Resilience Score Impact</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold text-gray-900">{result.current_state.risk_score.toFixed(1)}</span>
-                      <span className="text-muted-foreground">→</span>
-                      <span className={`text-lg font-bold ${result.projected_state.risk_score < result.current_state.risk_score ? "text-red-600" : "text-green-600"}`}>
-                        {result.projected_state.risk_score.toFixed(1)}
-                      </span>
-                      <Badge
-                        variant={result.impact.risk_score_change >= 0 ? "success" : "critical"}
-                        className="ml-1"
-                      >
-                        {result.impact.risk_score_change >= 0 ? "+" : ""}{result.impact.risk_score_change.toFixed(1)} pts
-                      </Badge>
-                    </div>
-                  </div>
-                  <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                      style={{ width: `${result.projected_state.risk_score}%` }}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            </>
-          )}
+        {/* Column 3: Telemetry Impact & Consequence Analysis (4 Cols) */}
+        <div className="lg:col-span-4 rounded-3xl bg-obsidian-900/90 border border-white/10 p-6 space-y-5 flex flex-col justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-white">
+                Projected Consequence
+              </h3>
+              <span className="text-xs font-mono text-cyan-400 font-bold">
+                -{sim.scoreDelta} Pts
+              </span>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div className="p-3.5 rounded-2xl bg-obsidian-950 border border-white/5 flex items-center justify-between">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Simulated New EMI</span>
+                  <p className="text-base font-bold text-amber-400 font-mono mt-0.5">
+                    +{formatCurrency(sim.monthlyEMI)} / mo
+                  </p>
+                </div>
+                <span className="text-[10px] text-slate-500 font-mono">Total: {formatCurrency(sim.newTotalEMI)}</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-obsidian-950 border border-white/5 flex items-center justify-between">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Free Monthly Surplus</span>
+                  <p className="text-base font-bold text-white font-mono mt-0.5">
+                    {formatCurrency(sim.newSurplus)}
+                  </p>
+                </div>
+                <span className="text-[10px] text-rose-400 font-mono">Was {formatCurrency(sim.currentSurplus)}</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-obsidian-950 border border-white/5 flex items-center justify-between">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Projected Resilience</span>
+                  <p className="text-base font-bold text-cyan-400 font-mono mt-0.5">
+                    {sim.simulatedResilience} / 100
+                  </p>
+                </div>
+                <Badge variant={sim.isDistressed ? "critical" : "warning"} className="text-[9px]">
+                  {sim.isDistressed ? "CRITICAL" : "WATCH"}
+                </Badge>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t border-white/5">
+            <Link href="/loans" className="w-full block">
+              <Button size="sm" onClick={() => sounds.click()} className="w-full bg-cyan-500 hover:bg-cyan-400 text-obsidian-950 font-bold text-xs">
+                Explore Lower-Cost Alternatives →
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* BEFORE VS AFTER DETAILED ASSESSMENT PANEL */}
+      <div className="rounded-3xl bg-gradient-to-r from-obsidian-900 via-obsidian-950 to-cyan-950/20 border border-white/10 p-6 sm:p-7 space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-cyan-400" />
+          <h3 className="font-extrabold text-white text-sm uppercase tracking-wider">
+            FinShield Decision Assessment
+          </h3>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-obsidian-950/80 border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
+          <div className="space-y-1">
+            <p className="font-bold text-white">
+              {sim.isDistressed
+                ? "⚠ Warning: This borrowing scenario significantly compresses your monthly safety buffer."
+                : "✓ Manageable: This installment structure leaves acceptable liquid surplus."}
+            </p>
+            <p className="text-slate-300 leading-relaxed text-xs">
+              Borrowing <strong className="text-white">{formatCurrency(loanAmount)}</strong> at <strong className="text-amber-300">{interestRate}%</strong> over {tenureMonths} months reduces your resilience score by <strong className="text-cyan-400">{sim.scoreDelta} points</strong> and leaves a free surplus of <strong className="text-emerald-400">{formatCurrency(sim.newSurplus)}/month</strong>.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <Link href="/loans">
+              <Button size="sm" className="bg-white/10 hover:bg-white/20 text-white text-xs">
+                Compare Fixed EMI Lenders
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     </Shell>
